@@ -1,0 +1,236 @@
+
+#1
+## hc
+```{r setup, include=FALSE}
+# Loading in the necessary libraries
+library(tidyverse)
+library(readxl)
+library(cluster)
+library(gridExtra)
+library(factoextra)
+library(dendextend)
+
+pot <- read_xls("C:/Users/denni/Documents/Dennis/Prasetiya Mulya/Semester Pendek 6/Multivariate Analysis/UAS/Human Development Index.xls")
+pot<- column_to_rownames(pot[,1:7], var = "Country")
+head(pot)
+```
+```{r}
+df_hc <- pot
+df_hc <- na.omit(df_hc)
+df_hc <- scale(df_hc)
+```
+
+
+```{r}
+# Dissimilarity matrix
+d <- dist(df_hc, method = "euclidean")
+
+# Hierarchical clustering using Complete Linkage
+hc1 <- hclust(d, method = "complete" )
+
+# Plot the obtained dendrogram
+plot(hc1, cex = 0.6, hang = -1)
+```
+
+
+```{r}
+hc2 <- agnes(df_hc, method = "complete")
+```
+
+```{r}
+hc2$ac
+```
+
+
+```{r}
+m <- c( "average", "single", "complete", "ward")
+names(m) <- c( "average", "single", "complete", "ward")
+ac <- function(x) {
+  agnes(df_hc, method = x)$ac
+}
+map_dbl(m, ac)
+```
+
+
+```{r}
+hc2 <- agnes(df_hc, method = "complete")
+pltree(hc2, cex = 0.6, hang = -1, main = "Dendrogram of agnes (complete)") 
+
+```
+
+
+```{r}
+hc3 <- agnes(df_hc, method = "ward")
+pltree(hc2, cex = 0.6, hang = -1, main = "Dendrogram of agnes (ward)") 
+```
+```{r}
+hc5 <- hclust(d, method = "ward.D2" )
+sub_grp <- cutree(hc5, k = 3)
+table(sub_grp)
+```
+
+
+```{r}
+plot(hc5, cex = 0.6)
+rect.hclust(hc5, k = 3, border = 2:5)
+```
+
+
+```{r}
+fviz_cluster(list(data = df_hc, cluster = sub_grp))
+```
+
+
+```{r}
+fviz_nbclust(df_hc, FUN = hcut, method = "wss")
+```
+```{r}
+fviz_nbclust(df_hc, FUN = hcut, method = "silhouette")
+```
+```{r}
+gap_stat <- clusGap(df_hc, FUN = hcut, nstart = 25, K.max = 10, B = 50)
+fviz_gap_stat(gap_stat)
+```
+```{r}
+hc5 <- hclust(d, method = "ward.D2" )
+sub_grp <- cutree(hc5, k = 3)
+table(sub_grp)
+```
+
+```{r}
+plot(hc5, cex = 0.6)
+rect.hclust(hc5, k = 3, border = 2:5)
+```
+```{r}
+fviz_cluster(list(data = df_hc, cluster = sub_grp))
+```
+
+## kmeans
+```{r}
+df_km <- pot
+df_km <- na.omit(df_km)
+df_km <- scale(df_km)
+```
+
+
+```{r}
+distance <- get_dist(df_km)
+fviz_dist(distance, gradient = list(low = "#00AFBB", mid = "white", high = "#FC4E07"))
+```
+
+
+```{r}
+k2 <- kmeans(df_km, centers = 2, nstart = 25)
+str(k2)
+```
+
+
+```{r}
+k2
+```
+```{r}
+fviz_cluster(k2, data = df_km)
+```
+```{r}
+df_km %>%
+  as_tibble() %>%
+  mutate(cluster = k2$cluster,
+         state = row.names(df_km)) %>%
+  ggplot(aes(BaO, Fe2O3, color = factor(cluster), label = state)) +
+  geom_text()
+```
+```{r}
+k3 <- kmeans(df_km, centers = 3, nstart = 25)
+k4 <- kmeans(df_km, centers = 4, nstart = 25)
+k5 <- kmeans(df_km, centers = 5, nstart = 25)
+
+# plots to compare
+p1 <- fviz_cluster(k2, geom = "point", data = df_km) + ggtitle("k = 2")
+p2 <- fviz_cluster(k3, geom = "point",  data = df_km) + ggtitle("k = 3")
+p3 <- fviz_cluster(k4, geom = "point",  data = df_km) + ggtitle("k = 4")
+p4 <- fviz_cluster(k5, geom = "point",  data = df_km) + ggtitle("k = 5")
+
+library(gridExtra)
+grid.arrange(p1, p2, p3, p4, nrow = 2)
+```
+
+
+```{r}
+set.seed(123)
+
+# function to compute total within-cluster sum of square 
+wss <- function(k) {
+  kmeans(df_km, k, nstart = 10 )$tot.withinss
+}
+
+# Compute and plot wss for k = 1 to k = 15
+k.values <- 1:15
+
+# extract wss for 2-15 clusters
+wss_values <- map_dbl(k.values, wss)
+
+plot(k.values, wss_values,
+       type="b", pch = 19, frame = FALSE, 
+       xlab="Number of clusters K",
+       ylab="Total within-clusters sum of squares")
+```
+
+
+```{r}
+set.seed(123)
+
+fviz_nbclust(df_km, kmeans, method = "wss")
+```
+```{r}
+avg_sil <- function(k) {
+  km.res <- kmeans(df_km, centers = k, nstart = 25)
+  ss <- silhouette(km.res$cluster, dist(df_km))
+  mean(ss[, 3])
+}
+
+# Compute and plot wss for k = 2 to k = 15
+k.values <- 2:15
+
+# extract avg silhouette for 2-15 clusters
+avg_sil_values <- map_dbl(k.values, avg_sil)
+
+plot(k.values, avg_sil_values,
+       type = "b", pch = 19, frame = FALSE, 
+       xlab = "Number of clusters K",
+       ylab = "Average Silhouettes")
+```
+```{r}
+# Compute k-means clustering with k = 4
+set.seed(123)
+final <- kmeans(df_km, 3, nstart = 25)
+print(final)
+```
+```{r}
+fviz_cluster(final, data = df_km)
+fviz_cluster(list(data = df_hc, cluster = sub_grp))
+```
+
+
+```{r}
+fviz_cluster(final, data = df_km)
+fviz_cluster(list(data = df_hc, cluster = sub_grp))
+```
+
+#4
+```{r}
+df_km %>%
+  as_tibble() %>%
+  mutate(cluster = final$cluster,
+         state = row.names(df_km)) %>%
+  ggplot(aes(BaO, MnO, color = factor(cluster), label = state)) +
+  geom_text()
+```
+```{r}
+df_hc %>%
+  as_tibble() %>%
+  mutate(cluster = sub_grp,
+         state = row.names(df_hc)) %>%
+  ggplot(aes(BaO, MnO, color = factor(cluster), label = state)) +
+  geom_text()
+```
+
