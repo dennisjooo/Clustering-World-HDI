@@ -1,0 +1,245 @@
+---
+title: "**Ujian Akhir Semester**"
+author: "**Angelique Allison, Dennis Jonathan, Frida Listiyani Sutedja, I Gede Putu Astana**"
+date: "*2022-08-30*"
+output: html_notebook
+---
+```{r setup, include=FALSE}
+# Knit settings
+knitr::opts_chunk$set(echo = TRUE)
+
+# Turning off warnings
+options(warn = -1)
+
+# Loading in the necessary libraries
+library(tidyverse)
+library(cluster)
+library(readxl)
+library(gridExtra)
+library(factoextra)
+library(dendextend)
+library(corrplot)
+
+# Setting the working directory
+setwd('C:/Users/denni/Documents/Dennis/Prasetiya Mulya/Semester Pendek 6/Multivariate Analysis/UAS')
+```
+
+### **1. Persiapan Data dan Eksplorasi Data**
+```{r data-prep}
+# Memasukan data yang diperlukan
+hdi <- read_xls("Human Development Index.xls")[,1:6]
+hdi <- column_to_rownames(hdi, var = "Country")
+
+# Memunculkan lima data pertama
+head(hdi)
+```
+```{r correlation}
+# Mencari korelasi antar variabel menggunakan korelasi Pearson
+corrplot(cor(hdi), method="number", main="Correlation Plot Dataset")
+```
+```{r pair-plot}
+# Memunculkan pair-plot dari data
+pairs(hdi,
+      panel = function (x, y, ...) {
+        points(x, y, ...)
+        abline(lm(y ~ x), col = "red")
+      }, pch = ".", cex = 1.5, main = 'Pair-Plot dari Data')
+```
+
+```{r descriptive stats}
+# Memunculkan descriptive statistics dari data
+summary(hdi)
+```
+```{r scaling}
+# Menyimpan data asli
+hdi.og <- hdi
+
+# Melakukan penskalaan data dan membuang data missing dari analisa
+hdi <- na.omit(hdi) %>% scale()
+```
+### **2. Hierarchical Clustering**
+#### **2.1. Agglomerative Hierarchical Clustering**
+```{r compare agnes linkage}
+# Mendefinisikan metode yang digunakan
+m <- c( "average", "single", "complete", "ward")
+names(m) <- c("average", "single", "complete", "ward")
+
+# Membuat fungsi untuk mencari koefisien
+ac <- function(x) {
+  agnes(hdi, method = x)$ac
+}
+
+# Menggunakan fungsi yang sudah dibuat
+map_dbl(m, ac)
+```
+```{r metode linkage terbaik}
+# Melakukan visualisasi metode linkage terbaik
+pltree(agnes(hdi, method = "ward"), cex = 0.6, hang = -1, main = "Dendrogram of AGNES with Ward Linkage")
+```
+#### **2.2. Divisive Hierarchical Clustering**
+```{r diana}
+# Melakukan divisive hierarchical clustering
+div.hc <- diana(hdi)
+
+# Mengeluarkan hasil koefisien clustering
+print(div.hc$dc)
+
+# Memunculkan pohon DIANA
+pltree(div.hc, cex = 0.6, hang = -1, main = "Dendrogram of DIANA")
+```
+
+#### **2.3. Perbandingan Kedua Metode**
+Jika dibandingkan, metode *Agglomerative Hierarchical Clustering* dengan *Ward linkage* memiliki performa yang terbaik karena memiliki koefisien terbesar di antara *linkage* yang lainnya dan juga algoritma *Divisive Hierarchical Clustering*.
+
+##### **2.4. Penentuan Jumlah Kelas**
+###### **2.4.1. Elbow Method**
+```{r wcss}
+# Melakukan WCSS untuk mencari jumlah kelas optimal
+wss.hc <- fviz_nbclust(hdi, FUN = hcut, method = "wss")
+```
+
+Menurut *Elbow method*, jumlah kelas yang sesuai adalah tiga kelas.
+
+###### **2.4.2. Silhouette Method**
+```{r silhouette}
+# Menggunakan metode silhouette untuk mencari kelas optimal
+sh.hc <- fviz_nbclust(hdi, FUN = hcut, method = "silhouette", main = "Silhouette Method")
+```
+
+Menurut *Silhouette method*, jumlah kelas yang sesuai adalah dua kelas.
+
+###### **2.4.3. Gap Statistics Method**
+```{r gapstat}
+# Menggunakan gap statistics untuk mencari jumlah kelas terbaik
+gap_stat <- clusGap(hdi, FUN = hcut, nstart = 25, K.max = 10, B = 50)
+
+# Memvisualisasikan hasil Gap Statistics
+gs.hc <- fviz_gap_stat(gap_stat)
+```
+
+Menurut *Gap Statistics*, jumlah kelas yang sesuai adalah tiga kelas.
+
+##### **3.1.3. Perbandingan Ketiga Metode**
+```{r combi method}
+# Membandingkan kedua metode clustering
+grid.arrange(wss.hc, sh.hc, gs.hc, nrow = 1)
+```
+
+#### **2.5. Hierarchical Clustering Terbaik**
+Setelah melakukan eksplorasi, metode *Hierarchical Clustering** terbaik adalah metode *Aglomerative Hierarchical Clustering* dengan *Ward linkage* dan tiga *cluster*
+```{r bestgroup}
+# Melakukan metode ward ke data
+best.hc <- hclust(dist(hdi, method = "euclidean"), method = "ward.D2" )
+
+# Memunculkan jumlah kelompok dari data
+sub_grp <- cutree(best.hc, k = 3)
+print(table(sub_grp))
+```
+```{r unit groups}
+# Memunculkan kelompok untuk setiap unit dalam bentuk text
+hdi.og$hc.clust <- cutree(as.hclust(agnes(hdi, method = "ward")), k = 3)
+```
+
+
+
+```{r besttree}
+# Memvisualisasikan tree diagram dari metode terbaik
+plot(best.hc, cex = 0.6)
+rect.hclust(best.hc, k = 3, border = 2:5)
+```
+
+
+
+
+```{r groupscatter}
+# Melakukan visualisasi cluster untuk setiap unit
+best.hc.plot <- fviz_cluster(list(data = hdi, cluster = sub_grp), main = 'Hierarchical Cluster')
+best.hc.plot
+```
+
+### **3. K-Means Clustering**
+#### **3.1. Penentuan Jumlah Cluster**
+```{r test_clust}
+# Menginisiasikan beberapa K-Means
+k2 <- kmeans(hdi, centers = 2, nstart = 25)
+k3 <- kmeans(hdi, centers = 3, nstart = 25)
+k4 <- kmeans(hdi, centers = 4, nstart = 25)
+k5 <- kmeans(hdi, centers = 5, nstart = 25)
+
+# Membuat plot perbandigan
+p1 <- fviz_cluster(k2, geom = "point", data = hdi) + ggtitle("k = 2")
+p2 <- fviz_cluster(k3, geom = "point",  data = hdi) + ggtitle("k = 3")
+p3 <- fviz_cluster(k4, geom = "point",  data = hdi) + ggtitle("k = 4")
+p4 <- fviz_cluster(k5, geom = "point",  data = hdi) + ggtitle("k = 5")
+grid.arrange(p1, p2, p3, p4, nrow = 2)
+```
+##### **3.1.1. Elbow Method**
+```{r elbow-plot}
+# Melakukan visualisasi diagram elbow
+wss.km <- fviz_nbclust(hdi, kmeans, method = "wss")
+```
+
+Dapat terlihat dari metode *elbow* di atas, data yang dimiliki memiliki sekitar tiga hingga empat *cluster*.
+
+##### **3.1.2. Silhouette Method**
+
+
+```{r silhouette-plot}
+# Menggunakan metode silhouette untuk menentukan jumlah cluster
+sh.km <- fviz_nbclust(hdi, kmeans, method = "silhouette")
+```
+
+Metode *silhouette* menandakan bahwa jumlah *cluster* yang ideal adalah dua *cluster*.
+
+##### **3.1.3. Gap Statistics**
+```{r gapstat2}
+# Menggunakan gap statistics untuk mencari jumlah kelas terbaik
+gap_stat2 <- clusGap(hdi, FUN = kmeans, nstart = 25, K.max = 10, B = 50)
+
+# Memvisualisasikan hasil Gap Statistics
+gs.km <- fviz_gap_stat(gap_stat2)
+```
+
+Metode *gap statistics* menandakan bahwa jumlah *cluster* yang ideal adalah tiga *cluster*.
+
+
+##### **3.1.3. Perbandingan Ketiga Metode**
+```{r combi method2}
+grid.arrange(wss.km, sh.km, gs.km, nrow = 1)
+```
+
+#### **3.2. K-Means Clustering Terbaik**
+```{r best-clust}
+# Compute k-means clustering with k = 3
+set.seed(123)
+
+# Membuat K-Means clustering dengan empat cluster
+best.km <- kmeans(hdi, 3)
+print(best.km)
+```
+```{r uni groups 2}
+# Mengembalikan cluster ke data asli
+hdi.og$km.clust <- c(2, 3, 1)[as.factor(best.km$cluster)]
+```
+```{r best-clust-viz}
+# Memvisualisasikan cluster
+best.km.plot <- fviz_cluster(best.km, data = hdi, main = 'K-Means Cluster')
+best.km.plot
+```
+
+### **4. Perbandingan Antara Cluster**
+```{r clust diff}
+# Mencari persentase perbedaan mapping
+print(paste("Proporsi Perbedaan Hasil Kluster adalah", round((1 - (sum(hdi.og$hc.clust == hdi.og$km.clust) / nrow(hdi.og))) * 100, 2), "%"))
+```
+```{r}
+nrow(hdi.og)-sum(hdi.og$hc.clust == hdi.og$km.clust)
+```
+```{r aggregated mean hc}
+# Pivot table agregasi menggunakan hierarchical cluster
+hdi.og %>% group_by(hc.clust) %>% summarise(across(1: 5, mean)) %>% round(4)
+```
+```{r aggregated mean km}
+# Pivot table agregasi menggunakan hierarchical cluster
+hdi.og %>% group_by(km.clust) %>% summarise(across(1: 5, mean)) %>% round(4)
+```
